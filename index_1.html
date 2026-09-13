@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ACQ Field Verification</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exif-js@2.3.0/exif.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{
+--pink:#E2136E; --navy:#1A1A2E; --navy-2:#242440; --paper:#F7F7FA; --line:#E2E2EA;
+--ink:#1A1A2E; --ink-soft:#6B6B7B; --pass:#0F8A4B; --pass-bg:#EAF7EF;
+--partial:#B8790A; --partial-bg:#FDF3E2; --fail:#C21F39; --fail-bg:#FCEAEC;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Bengali",Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent;}
+.app{max-width:520px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column;}
+
+.topbar{background:var(--navy);color:#fff;padding:16px 20px 14px;display:flex;flex-direction:column;gap:10px;}
+.topbar-row{display:flex;align-items:center;justify-content:space-between;}
+.brand{display:flex;flex-direction:column;gap:2px;}
+.brand .mark{font-size:11px;letter-spacing:.04em;color:var(--pink);font-weight:700;}
+.brand .title{font-size:18px;font-weight:700;}
+.session-chip{font-size:11px;color:rgba(255,255,255,.75);background:rgba(255,255,255,.1);padding:5px 10px;border-radius:20px;cursor:pointer;}
+.mode-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+.mode-tab{flex:1;min-width:80px;text-align:center;padding:8px 6px;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.08);color:rgba(255,255,255,.65);border:1px solid rgba(255,255,255,.15);}
+.mode-tab.active{background:var(--pink);color:#fff;border-color:var(--pink);}
+
+.view{display:none;flex:1;flex-direction:column;}
+.view.active{display:flex;}
+
+.scan-body{padding:20px;display:flex;flex-direction:column;gap:16px;flex:1;}
+.field{position:relative;}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;}
+.req{color:var(--pink);}
+.field-error{font-size:12px;color:var(--fail);margin-top:5px;}
+.field select, .field input[type=text], .field input[type=tel], .field textarea{
+width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:#fff;color:var(--ink);appearance:none;font-family:inherit;
+}
+.field select{
+background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236B6B7B' stroke-width='2.5'><path d='M6 9l6 6 6-6'/></svg>");
+background-repeat:no-repeat;background-position:right 14px center;padding-right:36px;
+}
+.field select:disabled, .field input:disabled{background-color:#F2F2F5;color:#6B6B7B;}
+.toggle-row{display:flex;gap:10px;}
+.toggle-opt{flex:1;border:1px solid var(--line);border-radius:10px;padding:11px 8px;text-align:center;font-size:14px;font-weight:600;color:var(--ink-soft);cursor:pointer;background:#fff;}
+.toggle-opt.on{border-color:var(--navy);background:var(--navy);color:#fff;}
+
+.ac-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:10px;margin-top:4px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:20;max-height:220px;overflow-y:auto;}
+.ac-item{padding:10px 14px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--line);}
+.ac-item:last-child{border-bottom:none;}
+.ac-item:active{background:var(--paper);}
+.ac-sub{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+
+.section-title{font-size:14px;font-weight:800;color:var(--navy);margin:6px 0 -4px;padding-top:8px;border-top:1px solid var(--line);}
+.section-hint{font-size:12px;color:var(--ink-soft);margin:-8px 0 0;}
+
+.camera-zone{border:1.5px dashed var(--line);border-radius:14px;padding:22px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.camera-zone img{width:100%;border-radius:10px;display:block;}
+.cam-btn{background:var(--pink);color:#fff;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer;width:100%;justify-content:center;}
+.cam-btn:disabled{background:#D8D8DE;color:#9A9AA6;}
+.cam-hint{font-size:12.5px;color:var(--ink-soft);}
+.retake{background:none;border:none;color:var(--pink);font-weight:700;font-size:13.5px;cursor:pointer;padding:4px;}
+.flag-badge{font-size:12px;font-weight:700;padding:6px 10px;border-radius:8px;width:100%;text-align:left;}
+.flag-badge.checking{background:var(--paper);color:var(--ink-soft);}
+.flag-badge.clean{background:var(--pass-bg);color:var(--pass);}
+.flag-badge.suspicious{background:var(--fail-bg);color:var(--fail);}
+.flag-badge.unknown{background:var(--partial-bg);color:var(--partial);}
+.confirm-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--ink-soft);text-align:left;line-height:1.4;padding:4px 2px;}
+.confirm-row input[type=checkbox]{margin-top:2px;flex:none;}
+
+.ocr-status{font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--paper);color:var(--ink-soft);}
+.ocr-status.ok{background:var(--pass-bg);color:var(--pass);}
+.manual-nid-btn{background:none;border:1px dashed var(--line);border-radius:8px;padding:10px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;width:100%;}
+
+.gps-status{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;background:var(--paper);font-size:12.5px;color:var(--ink-soft);}
+.gps-dot{width:9px;height:9px;border-radius:50%;background:var(--ink-soft);flex:none;}
+.gps-dot.ok{background:var(--pass);}
+.gps-dot.bad{background:var(--fail);}
+.gps-retry{background:var(--navy);color:#fff;border:none;border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;flex:none;}
+
+.submit-btn{background:var(--navy);color:#fff;border:none;border-radius:10px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;width:100%;}
+.submit-btn:disabled{background:#B7B7C4;cursor:default;}
+.submit-btn.loading{background:var(--navy-2);}
+.link-btn{background:none;border:none;color:var(--pink);font-weight:700;font-size:13px;cursor:pointer;padding:6px 0;text-align:left;}
+
+.result-wrap{padding:0 20px 24px;}
+.result-card{border-radius:16px;overflow:hidden;border:1px solid var(--line);}
+.result-head{padding:18px 20px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;background:var(--pass-bg);}
+.result-title{font-size:19px;font-weight:800;line-height:1.2;color:var(--pass);}
+.result-sub{font-size:13px;color:var(--ink);}
+.result-body{padding:16px 20px;display:flex;flex-direction:column;gap:10px;background:#fff;}
+.info-row{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);}
+.info-row:last-child{border-bottom:none;}
+.info-label{color:var(--ink-soft);}
+.info-val{font-weight:600;text-align:right;max-width:60%;}
+.result-actions{display:flex;gap:10px;padding:0 20px 20px;}
+.result-actions button{flex:1;padding:12px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);}
+.result-actions .primary{background:var(--navy);color:#fff;border:none;}
+
+.error-box{margin:0 20px 16px;padding:13px 15px;background:var(--fail-bg);color:var(--fail);border-radius:10px;font-size:13.5px;}
+.retry-btn{margin-top:10px;background:var(--navy);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;}
+
+.risk-badge{display:inline-block;padding:5px 10px;border-radius:7px;font-size:11.5px;font-weight:800;}
+.risk-badge.low{background:var(--pass-bg);color:var(--pass);}
+.risk-badge.medium{background:var(--partial-bg);color:var(--partial);}
+.risk-badge.high{background:var(--fail-bg);color:var(--fail);}
+
+.queue-card{border:1px solid var(--line);border-radius:14px;margin:0 20px 16px;overflow:hidden;}
+.queue-head{padding:14px 16px;background:var(--paper);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.queue-head .qname{font-weight:700;font-size:14px;}
+.queue-head .qtime{font-size:11.5px;color:var(--ink-soft);}
+.queue-body{padding:14px 16px;display:flex;flex-direction:column;gap:8px;}
+.queue-links{display:flex;gap:6px;flex-wrap:wrap;}
+.queue-links a{font-size:11.5px;font-weight:700;color:var(--pink);text-decoration:none;padding:6px 9px;border:1px solid var(--pink);border-radius:7px;}
+.queue-flags{display:flex;gap:6px;flex-wrap:wrap;}
+.qflag{font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;}
+.qflag.clean{background:var(--pass-bg);color:var(--pass);}
+.qflag.suspicious{background:var(--fail-bg);color:var(--fail);}
+.ai-btn{background:var(--navy-2);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;width:100%;}
+.ai-result{font-size:12.5px;padding:8px 10px;border-radius:8px;margin-top:6px;}
+.ai-result.pass{background:var(--pass-bg);color:var(--pass);}
+.ai-result.suspicious{background:var(--fail-bg);color:var(--fail);}
+.queue-actions{display:flex;gap:10px;padding:12px 16px;border-top:1px solid var(--line);}
+.queue-actions button{flex:1;padding:11px;border-radius:9px;font-size:13.5px;font-weight:700;cursor:pointer;border:none;}
+.approve-btn{background:var(--pass);color:#fff;}
+.reject-btn{background:var(--fail);color:#fff;}
+.reject-box{padding:0 16px 14px;}
+.reject-box textarea{min-height:60px;resize:vertical;}
+
+.dash-body{padding:18px 18px 30px;display:flex;flex-direction:column;gap:16px;flex:1;}
+.dash-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.stat-card{border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;}
+.stat-num{font-size:19px;font-weight:800;}
+.stat-label{font-size:9.5px;color:var(--ink-soft);font-weight:600;margin-top:2px;}
+.stat-card.dup .stat-num{color:var(--fail);}
+.stat-card.ok .stat-num{color:var(--pass);}
+.stat-card.rej .stat-num{color:var(--fail);}
+.dash-filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;}
+.dash-filters select, .dash-filters input[type=date]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;background:#fff;color:var(--ink);flex:none;}
+.datefield{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;flex:none;}
+.datefield label{font-size:11px;color:var(--ink-soft);font-weight:600;}
+.export-btn{background:var(--pink);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14.5px;font-weight:700;cursor:pointer;}
+.dash-table-wrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:var(--navy);color:#fff;text-align:left;padding:9px 10px;font-weight:700;font-size:11.5px;}
+td{padding:9px 10px;border-top:1px solid var(--line);color:var(--ink);}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px;}
+.tag.Approved{background:var(--pass-bg);color:var(--pass);}
+.tag.Rejected{background:var(--fail-bg);color:var(--fail);}
+.tag.Pending{background:var(--partial-bg);color:var(--partial);}
+.empty-state{padding:40px 20px;text-align:center;color:var(--ink-soft);font-size:13.5px;}
+.sub-note{font-size:10.5px;color:var(--ink-soft);}
+.table-scroll{max-height:420px;overflow:auto;}
+.ev-link{color:var(--pink);font-weight:700;text-decoration:none;display:inline-block;font-size:11px;}
+
+.status-card{border:1px solid var(--line);border-radius:12px;margin:0 20px 12px;padding:14px 16px;}
+.status-top{display:flex;justify-content:space-between;align-items:center;}
+.status-shop{font-weight:700;font-size:14px;}
+.status-meta{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+.status-reject-note{margin-top:8px;padding:10px;background:var(--fail-bg);border-radius:8px;font-size:12.5px;color:var(--fail);}
+
+.admin-tabs{display:flex;gap:6px;padding:16px 20px 0;}
+.admin-tab{flex:1;text-align:center;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--paper);color:var(--ink-soft);}
+.admin-tab.active{background:var(--navy);color:#fff;}
+.admin-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 0.7fr auto;gap:6px;padding:8px;border-bottom:1px solid var(--line);font-size:11.5px;align-items:center;}
+.admin-row input, .admin-row select{font-size:11px;padding:6px;border:1px solid var(--line);border-radius:6px;width:100%;}
+.admin-del{background:var(--fail);color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;}
+.admin-save{background:var(--pass);color:#fff;border:none;border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;}
+.bulk-box{width:100%;min-height:120px;font-family:monospace;font-size:11px;}
+
+.spinner{width:16px;height:16px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="topbar">
+<div class="topbar-row">
+<div class="brand">
+<span class="mark">bKash · MYMENSINGH AREA</span>
+<span class="title">ACQ Field Verification</span>
+</div>
+<div class="session-chip hidden" id="sessionChip" onclick="staffLogout()"></div>
+</div>
+<div class="mode-tabs" id="modeTabs">
+<div class="mode-tab active" data-mode="entry" onclick="switchMode('entry')">MDO Entry</div>
+<div class="mode-tab" data-mode="mystatus" onclick="switchMode('mystatus')">আমার স্ট্যাটাস</div>
+<div class="mode-tab" data-mode="stafflogin" id="staffTabBtn" onclick="switchMode('stafflogin')">Employee Login</div>
+</div>
+</div>
+
+<div class="view active" id="entryView">
+<div class="scan-body">
+
+<div class="field">
+<label>নাম (লিস্ট থেকে সিলেক্ট করুন) <span class="req">*</span></label>
+<input type="text" id="mdoName" placeholder="লোড হচ্ছে..." autocomplete="off">
+<div class="ac-list hidden" id="mdoAcList"></div>
+</div>
+
+<div class="field">
+<label>Whitelist Number</label>
+<input type="text" id="mdoWhitelist" disabled placeholder="নাম সিলেক্ট করলে auto-fill হবে">
+</div>
+
+<div class="field">
+<label>Territory <span class="req">*</span></label>
+<select id="territory" onchange="onTerritoryChange()">
+<option value="">নির্বাচন করুন</option>
+<option>Netrakona</option>
+<option>Mymensingh Outer</option>
+<option>Mymensingh Metro</option>
+<option>Kishorganj</option>
+<option>Bhaluka</option>
+</select>
+</div>
+
+<div class="field">
+<label>DH Name <span class="req">*</span></label>
+<select id="dhName" onchange="checkReady()" disabled>
+<option value="">আগে Territory নির্বাচন করুন</option>
+</select>
+</div>
+
+<div class="field">
+<label>এই দোকানে কি ইতিমধ্যে Agent/Merchant Account আছে? <span class="req">*</span></label>
+<div class="toggle-row">
+<div class="toggle-opt" id="dupNo" onclick="setDup(false)">না (No)</div>
+<div class="toggle-opt" id="dupYes" onclick="setDup(true)">হ্যাঁ (Yes)</div>
+</div>
+</div>
+
+<div class="field">
+<label>Merchant Account নম্বর লিখুন যেটা Approval নিবেন <span class="req">*</span></label>
+<input type="tel" id="approvalNumber" inputmode="numeric" maxlength="11" placeholder="01XXXXXXXXX">
+<div class="field-error hidden" id="approvalNumberError">সঠিক ১১ ডিজিটের নম্বর দিন (01 দিয়ে শুরু)</div>
+</div>
+
+<div class="field">
+<label>দোকানের নাম (Merchant Shop Name) <span class="req">*</span></label>
+<input type="text" id="merchantName" placeholder="দোকানের নাম লিখুন">
+</div>
+
+<div class="field">
+<label>দোকান মালিকের নাম (NID অনুযায়ী) <span class="req">*</span></label>
+<input type="text" id="ownerName" placeholder="NID কার্ডে যেভাবে লেখা আছে সেভাবে লিখুন">
+<div class="field-error hidden" id="nidNameMismatch">⚠️ NID-তে পাওয়া নামের সাথে মিলছে না। NID অনুযায়ী সঠিক নাম লিখুন।</div>
+</div>
+
+<div class="gps-status" id="gpsStatus">
+<div class="gps-dot" id="gpsDot"></div>
+<span id="gpsText" style="flex:1;">লোকেশন খোঁজা হচ্ছে...</span>
+<button class="gps-retry hidden" id="gpsRetryBtn" onclick="initGPS()">আবার চেষ্টা</button>
+</div>
+
+<div class="section-title">১. দোকানের সামনের ছবি (সাইনবোর্ড সহ) <span class="req">*</span></div>
+<div class="camera-zone" id="shopAZone">
+<input type="file" accept="image/*" capture="environment" id="shopAInput" class="hidden" onchange="onPhoto(event,'shopA')">
+<div id="shopAPrompt">
+<button class="cam-btn" id="shopABtn" onclick="document.getElementById('shopAInput').click()" disabled>📷&nbsp; ছবি তুলুন</button>
+<div class="cam-hint">শুধু লাইভ ক্যামেরা — GPS চালু থাকতে হবে</div>
+</div>
+<div id="shopAPreview" class="hidden">
+<img id="shopAImg" src="">
+<div class="flag-badge checking" id="shopAFlag">যাচাই করা হচ্ছে...</div>
+<label class="confirm-row"><input type="checkbox" id="shopAConfirm" onchange="checkReady()"> আমি নিশ্চিত করছি যে এই ছবিটি এই মুহূর্তে সরাসরি ক্যামেরায় তোলা এবং প্রকৃত দোকানের প্রতিনিধিত্ব করে। ভুল তথ্য প্রদান কোম্পানির নীতিমালা লঙ্ঘন হিসেবে গণ্য হবে।</label>
+<button class="retake" onclick="retake('shopA')">আবার ছবি তুলুন</button>
+</div>
+</div>
+
+<div class="section-title">২. দোকানের ভিতরের ছবি (পণ্য স্পষ্ট দেখা যায়) <span class="req">*</span></div>
+<div class="camera-zone" id="shopBZone">
+<input type="file" accept="image/*" capture="environment" id="shopBInput" class="hidden" onchange="onPhoto(event,'shopB')">
+<div id="shopBPrompt">
+<button class="cam-btn" id="shopBBtn" onclick="document.getElementById('shopBInput').click()" disabled>📷&nbsp; ছবি তুলুন</button>
+<div class="cam-hint">শুধু লাইভ ক্যামেরা — GPS চালু থাকতে হবে</div>
+</div>
+<div id="shopBPreview" class="hidden">
+<img id="shopBImg" src="">
+<div class="flag-badge checking" id="shopBFlag">যাচাই করা হচ্ছে...</div>
+<label class="confirm-row"><input type="checkbox" id="shopBConfirm" onchange="checkReady()"> আমি নিশ্চিত করছি যে এই ছবিটি এই মুহূর্তে সরাসরি ক্যামেরায় তোলা এবং প্রকৃত দোকানের প্রতিনিধিত্ব করে। ভুল তথ্য প্রদান কোম্পানির নীতিমালা লঙ্ঘন হিসেবে গণ্য হবে।</label>
+<button class="retake" onclick="retake('shopB')">আবার ছবি তুলুন</button>
+</div>
+</div>
+
+<div class="section-title">৩. NID (জাতীয় পরিচয়পত্র) <span class="req">*</span></div>
+<div class="section-hint">মেশিন-রিডেবল লাইন সহ পুরো কার্ড স্পষ্টভাবে দৃশ্যমান থাকতে হবে</div>
+<div class="camera-zone" id="nidZone">
+<input type="file" accept="image/*" capture="environment" id="nidInput" class="hidden" onchange="onPhoto(event,'nid')">
+<div id="nidPrompt">
+<button class="cam-btn" id="nidBtn" onclick="document.getElementById('nidInput').click()" disabled>📷&nbsp; NID-এর ছবি তুলুন</button>
+<div class="cam-hint">শুধু লাইভ ক্যামেরা — GPS চালু থাকতে হবে</div>
+</div>
+<div id="nidPreview" class="hidden">
+<img id="nidImg" src="">
+<div class="ocr-status" id="ocrStatus">নম্বর পড়া হচ্ছে...</div>
+<div id="manualNidWrap" class="hidden">
+<input type="text" id="manualNidInput" placeholder="NID নম্বর লিখুন" inputmode="numeric" oninput="onManualNidInput()">
+</div>
+<button class="retake" onclick="retake('nid')">আবার ছবি তুলুন</button>
+</div>
+</div>
+
+<div class="section-title">৪. অতিরিক্ত প্রমাণ <span class="req">*</span></div>
+<div class="section-hint">যেকোনো একটি গ্রহণযোগ্য: Trade License / Visiting Card / Shopping Bag (দোকানের নাম-ঠিকানাসহ) / Memo-Invoice / Shop Seal — যেখানে দোকানের নাম ও ঠিকানা স্পষ্ট বোঝা যায়</div>
+<div class="field">
+<label>ডকুমেন্টের ধরন</label>
+<select id="docType" onchange="onDocTypeChange()">
+<option value="Trade License">Trade License</option>
+<option value="Visiting Card">Visiting Card</option>
+<option value="Shopping Bag">Shopping Bag (নাম-ঠিকানাসহ)</option>
+<option value="Memo/Invoice">Memo/Invoice</option>
+<option value="Shop Seal">Shop Seal</option>
+<option value="None">কোনো ডকুমেন্ট নেই (তালিকার কোনোটিই নেই)</option>
+</select>
+</div>
+<div class="camera-zone" id="docZone">
+<input type="file" accept="image/*" capture="environment" id="docInput" class="hidden" onchange="onPhoto(event,'doc')">
+<div id="docPrompt">
+<button class="cam-btn" id="docBtn" onclick="document.getElementById('docInput').click()" disabled>📷&nbsp; ডকুমেন্টের ছবি তুলুন</button>
+<div class="cam-hint">শুধু লাইভ ক্যামেরা — GPS চালু থাকতে হবে</div>
+</div>
+<div id="docPreview" class="hidden">
+<img id="docImg" src="">
+<button class="retake" onclick="retake('doc')">আবার ছবি তুলুন</button>
+</div>
+</div>
+<div class="field-error hidden" id="noDocWarning" style="color:var(--partial);">⚠️ কোনো অতিরিক্ত প্রমাণ ছাড়া জমা হবে।</div>
+
+<button class="submit-btn" id="submitBtn" onclick="runSubmit()" disabled>যাচাই করে জমা দিন</button>
+</div>
+<div class="result-wrap hidden" id="resultWrap"></div>
+</div>
+
+<div class="view" id="mystatusView">
+<div class="scan-body" style="padding-bottom:8px;">
+<div class="field">
+<label>আপনার নাম <span class="req">*</span></label>
+<input type="text" id="statusName" placeholder="নাম টাইপ করুন..." autocomplete="off">
+<div class="ac-list hidden" id="statusAcList"></div>
+</div>
+<div class="field">
+<label>আপনার Whitelist Number <span class="req">*</span></label>
+<input type="tel" id="statusWhitelist" inputmode="numeric" placeholder="যাচাইয়ের জন্য নিজের নম্বর দিন">
+</div>
+<button class="submit-btn" onclick="loadMyStatus()">দেখুন</button>
+</div>
+<div id="statusList" style="padding-top:8px;"></div>
+<div class="empty-state hidden" id="statusEmpty">কোনো এন্ট্রি পাওয়া যায়নি।</div>
+</div>
+
+<div class="view" id="stafloginView">
+<div class="scan-body" style="padding-bottom:0;">
+<div class="field">
+<label>আপনার নাম (OM/TM/AM) <span class="req">*</span></label>
+<input type="text" id="approverName" placeholder="লোড হচ্ছে..." autocomplete="off">
+<div class="ac-list hidden" id="approverAcList"></div>
+</div>
+<div class="field hidden" id="approverPinField">
+<label id="approverPinLabel">লোড হচ্ছে...</label>
+<input type="tel" id="approverPin" inputmode="numeric" maxlength="4" placeholder="৪-সংখ্যার PIN">
+<input type="tel" id="approverPinConfirm" inputmode="numeric" maxlength="4" placeholder="PIN আবার লিখুন" class="hidden" style="margin-top:8px;">
+<button class="submit-btn" id="approverPinBtn" style="margin-top:10px;padding:12px;font-size:14px;" onclick="submitApproverPin()">যাচাই করুন</button>
+<div class="field-error hidden" id="approverPinError"></div>
+<button class="link-btn hidden" id="forgotPinLink" onclick="showForgotPin()">PIN ভুলে গেছেন?</button>
+</div>
+<div class="field hidden" id="forgotPinField">
+<label>আপনার Whitelist Number দিয়ে যাচাই করুন</label>
+<input type="tel" id="forgotWhitelist" inputmode="numeric" placeholder="নিজের Whitelist Number">
+<button class="submit-btn" style="margin-top:10px;padding:12px;font-size:14px;" onclick="verifyForgotPin()">যাচাই করুন</button>
+<div class="field-error hidden" id="forgotPinError"></div>
+</div>
+</div>
+</div>
+
+<div class="view" id="approveView">
+<div class="approver-banner" id="approverBanner" style="margin:16px 20px;padding:12px 14px;background:var(--pass-bg);border-radius:10px;font-size:13px;color:var(--pass);font-weight:700;"></div>
+<div id="queueList"></div>
+<div class="empty-state hidden" id="queueEmpty">কোনো pending entry নেই।</div>
+</div>
+
+<div class="view" id="dashView">
+<div class="dash-body">
+<div class="dash-stats" id="statsRow"></div>
+<div class="dash-filters">
+<select id="filterTerritory" onchange="renderDashboard()"><option value="">All Territories</option></select>
+<select id="filterMdo" onchange="renderDashboard()"><option value="">All MDOs</option></select>
+<select id="filterStatus" onchange="renderDashboard()">
+<option value="">All Status</option>
+<option value="Pending">Pending</option>
+<option value="Approved">Approved</option>
+<option value="Rejected">Rejected</option>
+</select>
+</div>
+<div class="dash-filters">
+<div class="datefield"><label>From</label><input type="date" id="filterFrom" onchange="renderDashboard()"></div>
+<div class="datefield"><label>To</label><input type="date" id="filterTo" onchange="renderDashboard()"></div>
+<button class="admin-tab" style="flex:none;padding:8px 12px;" onclick="clearDateFilter()">Clear</button>
+</div>
+<button class="export-btn" onclick="exportExcel()">⬇ Excel এ Export করুন</button>
+<div class="dash-table-wrap">
+<div class="table-scroll">
+<table>
+<thead><tr><th>Time</th><th>MDO / Shop</th><th>Evidence</th><th>Status</th></tr></thead>
+<tbody id="dashTableBody"></tbody>
+</table>
+</div>
+<div class="empty-state hidden" id="emptyState">এখনো কোনো এন্ট্রি হয়নি।</div>
+</div>
+</div>
+</div>
+
+<div class="view" id="adminView">
+<div class="admin-tabs">
+<div class="admin-tab active" data-atab="roster" onclick="switchAdminTab('roster')">Roster</div>
+<div class="admin-tab" data-atab="bulk" onclick="switchAdminTab('bulk')">Bulk Update</div>
+<div class="admin-tab" data-atab="pins" onclick="switchAdminTab('pins')">PIN Resets</div>
+</div>
+<div class="dash-body" id="adminRosterTab">
+<button class="submit-btn" onclick="addEmployeeRow()">+ নতুন কর্মী যোগ করুন</button>
+<div id="adminRosterList"></div>
+</div>
+<div class="dash-body hidden" id="adminBulkTab">
+<div class="section-hint">CSV পেস্ট করুন — কলাম অর্ডার: Territory, DH, Employee Name, Whitelist No, Designation (হেডার লাইন থাকলে সমস্যা নেই, নিজে থেকে বাদ যাবে)। এটি পুরো Employees তালিকা প্রতিস্থাপন করবে।</div>
+<textarea class="bulk-box" id="bulkCsvInput" placeholder="Territory,DH,Employee Name,Whitelist No,Designation&#10;Bhaluka,BHALUKA CHANNEL ENTERPRISE LTD,Md. Example,1710000000,MDO"></textarea>
+<button class="submit-btn" onclick="submitBulkEmployees()">সম্পূর্ণ তালিকা প্রতিস্থাপন করুন</button>
+<div class="field-error hidden" id="bulkError"></div>
+<div class="ocr-status hidden ok" id="bulkSuccess"></div>
+</div>
+<div class="dash-body hidden" id="adminPinsTab">
+<div class="section-hint">যাদের PIN সেট করা আছে তাদের তালিকা — Reset চাপলে তাদের PIN মুছে যাবে, পরের বার তারা নতুন PIN সেট করতে পারবে।</div>
+<div id="adminApproversList"></div>
+</div>
+</div>
+
+</div>
+
+<script>
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxYQ35YNlSw6uDtrojRnHd4KPdNf-qg_cpdOcJ9mHmLF-QkAFQWxevZze0xSglELjvH8w/exec';
+
+const TERRITORY_DH_MAP = {
+"Netrakona": [
+{dh:"M/S SHASHI MOHAN ROY", houseType:"Shared"},
+{dh:"JOY TELECOMMUNICATION LIMITED", houseType:"Standard"},
+{dh:"M/S SHASHI MOHAN ROY-MOHANGANJ", houseType:"Shared"}
+],
+"Mymensingh Outer": [
+{dh:"PRINCE DISTRIBUTION_", houseType:"Shared"},
+{dh:"M/S ZAMAN ENTERPRISE", houseType:"Shared"}
+],
+"Mymensingh Metro": [
+{dh:"BHALUKA CHANNEL ENTERPRISE LTD-MASTERBARI", houseType:"Standard"},
+{dh:"BHALUKA CHANNEL ENTERPRISE LTD-MUKTAGACHA", houseType:"Shared"}
+],
+"Kishorganj": [
+{dh:"J.I. IMPEX LTD", houseType:"Shared"},
+{dh:"TRUST ENTERPRISE", houseType:"Standard"}
+],
+"Bhaluka": [
+{dh:"BHALUKA CHANNEL ENTERPRISE LTD", houseType:"Standard"},
+{dh:"BHALUKA CHANNEL ENTERPRISE LTD-SREEPUR", houseType:"Shared"},
+{dh:"M/S ALI AND SONS SREEPUR", houseType:"Shared"}
+]
+};
+
+let EMPLOYEES = [];
+async function loadEmployees(){
+try{
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 10000);
+const resp = await fetch(BACKEND_URL + '?action=getEmployees', { signal: controller.signal });
+clearTimeout(timeoutId);
+const data = await resp.json();
+EMPLOYEES = data.employees || [];
+}catch(e){
+console.error('Failed to load employees', e);
+const reason = e.name === 'AbortError' ? 'সময় শেষ (network hang)' : (e.message || e.name || 'unknown');
+['mdoName','approverName','statusName'].forEach(id => {
+const el = document.getElementById(id);
+if(el) el.placeholder = 'ব্যর্থ: ' + reason;
+});
+return;
+}
+['mdoName','approverName','statusName'].forEach(id => {
+const el = document.getElementById(id);
+if(el) el.placeholder = EMPLOYEES.length ? 'নাম টাইপ করুন...' : 'লোড ব্যর্থ — রিফ্রেশ করুন';
+});
+}
+loadEmployees();
+
+function attachAutocomplete(inputId, listId, roleFilter, onSelect){
+const input = document.getElementById(inputId);
+const list = document.getElementById(listId);
+input.addEventListener('input', () => {
+const q = input.value.trim().toLowerCase();
+if(q.length < 1){ list.classList.add('hidden'); list.innerHTML=''; return; }
+const matches = EMPLOYEES.filter(e =>
+(!roleFilter || roleFilter.indexOf(e.r) !== -1) && e.n.toLowerCase().indexOf(q) !== -1
+).slice(0, 8);
+if(!matches.length){ list.classList.add('hidden'); list.innerHTML=''; return; }
+list.innerHTML = matches.map((e,i) =>
+`<div class="ac-item" data-idx="${i}">${escapeHtml(e.n)}<span class="ac-sub">${escapeHtml(e.d || e.t)} · ${escapeHtml(e.r)}</span></div>`
+).join('');
+list.classList.remove('hidden');
+Array.prototype.forEach.call(list.querySelectorAll('.ac-item'), (el, i) => {
+el.onmousedown = () => {
+input.value = matches[i].n;
+list.classList.add('hidden');
+onSelect(matches[i]);
+};
+});
+});
+input.addEventListener('blur', () => setTimeout(() => list.classList.add('hidden'), 150));
+}
+
+let selectedMdo = null;
+attachAutocomplete('mdoName', 'mdoAcList', ['MDO','MAO','MDS'], (emp) => {
+selectedMdo = emp;
+document.getElementById('mdoWhitelist').value = emp.w;
+document.getElementById('territory').value = emp.t;
+onTerritoryChange();
+if(emp.d){ document.getElementById('dhName').value = emp.d; }
+checkReady();
+});
+document.getElementById('mdoName').addEventListener('input', () => {
+if(selectedMdo && document.getElementById('mdoName').value !== selectedMdo.n){
+selectedMdo = null;
+document.getElementById('mdoWhitelist').value = '';
+}
+checkReady();
+});
+
+let selectedStatusEmp = null;
+attachAutocomplete('statusName', 'statusAcList', ['MDO','MAO','MDS'], (emp) => {
+selectedStatusEmp = emp;
+});
+
+let selectedApprover = null;
+let pinMode = null;
+attachAutocomplete('approverName', 'approverAcList', ['OM','TM','AM'], async (emp) => {
+selectedApprover = emp;
+document.getElementById('approverPinField').classList.remove('hidden');
+document.getElementById('forgotPinField').classList.add('hidden');
+document.getElementById('approverPin').value = '';
+document.getElementById('approverPinConfirm').value = '';
+document.getElementById('approverPinConfirm').classList.add('hidden');
+document.getElementById('approverPinError').classList.add('hidden');
+document.getElementById('forgotPinLink').classList.add('hidden');
+document.getElementById('approverPinLabel').textContent = 'লোড হচ্ছে...';
+
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'checkPin', name: emp.n })
+});
+const data = await resp.json();
+if(data.exists){
+pinMode = 'verify';
+document.getElementById('approverPinLabel').textContent = 'আপনার ৪-সংখ্যার PIN দিন';
+document.getElementById('approverPinConfirm').classList.add('hidden');
+document.getElementById('forgotPinLink').classList.remove('hidden');
+} else {
+pinMode = 'setup';
+document.getElementById('approverPinLabel').textContent = 'নতুন ৪-সংখ্যার PIN সেট করুন (মনে রাখুন — পরের বার এটাই লাগবে)';
+document.getElementById('approverPinConfirm').classList.remove('hidden');
+}
+}catch(e){
+document.getElementById('approverPinLabel').textContent = 'PIN স্ট্যাটাস চেক করা যায়নি — নেটওয়ার্ক দেখুন';
+}
+});
+
+async function submitApproverPin(){
+if(!selectedApprover) return;
+const errEl = document.getElementById('approverPinError');
+const pin = document.getElementById('approverPin').value.trim();
+if(!/^\d{4}$/.test(pin)){
+errEl.textContent = '৪ সংখ্যার PIN দিন';
+errEl.classList.remove('hidden');
+return;
+}
+if(pinMode === 'setup'){
+const confirmPin = document.getElementById('approverPinConfirm').value.trim();
+if(pin !== confirmPin){
+errEl.textContent = 'দুইটি PIN মিলছে না — আবার দিন';
+errEl.classList.remove('hidden');
+return;
+}
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'setPin', name: selectedApprover.n, pin })
+});
+const data = await resp.json();
+if(data.error) throw new Error(data.error);
+errEl.classList.add('hidden');
+staffLoginSuccess();
+}catch(e){
+errEl.textContent = e.message || 'সমস্যা হয়েছে';
+errEl.classList.remove('hidden');
+}
+} else {
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'verifyPin', name: selectedApprover.n, pin })
+});
+const data = await resp.json();
+if(data.match){
+errEl.classList.add('hidden');
+staffLoginSuccess();
+} else {
+errEl.textContent = 'ভুল PIN — আবার চেষ্টা করুন';
+errEl.classList.remove('hidden');
+}
+}catch(e){
+errEl.textContent = 'যাচাই করা যায়নি: ' + (e.message||'');
+errEl.classList.remove('hidden');
+}
+}
+}
+
+function showForgotPin(){
+document.getElementById('forgotPinField').classList.remove('hidden');
+document.getElementById('forgotWhitelist').value = '';
+document.getElementById('forgotPinError').classList.add('hidden');
+}
+
+async function verifyForgotPin(){
+if(!selectedApprover) return;
+const errEl = document.getElementById('forgotPinError');
+const wl = document.getElementById('forgotWhitelist').value.trim();
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'forgotPinVerify', name: selectedApprover.n, whitelist: wl })
+});
+const data = await resp.json();
+if(data.verified){
+errEl.classList.add('hidden');
+document.getElementById('forgotPinField').classList.add('hidden');
+pinMode = 'setup';
+document.getElementById('approverPinLabel').textContent = 'নতুন PIN সেট করুন';
+document.getElementById('approverPin').value = '';
+document.getElementById('approverPinConfirm').value = '';
+document.getElementById('approverPinConfirm').classList.remove('hidden');
+document.getElementById('approverPinBtn').onclick = submitForceSetPin;
+} else {
+errEl.textContent = 'নম্বর মিলছে না';
+errEl.classList.remove('hidden');
+}
+}catch(e){
+errEl.textContent = 'যাচাই করা যায়নি';
+errEl.classList.remove('hidden');
+}
+}
+
+async function submitForceSetPin(){
+const errEl = document.getElementById('approverPinError');
+const pin = document.getElementById('approverPin').value.trim();
+const confirmPin = document.getElementById('approverPinConfirm').value.trim();
+if(!/^\d{4}$/.test(pin)){ errEl.textContent = '৪ সংখ্যার PIN দিন'; errEl.classList.remove('hidden'); return; }
+if(pin !== confirmPin){ errEl.textContent = 'দুইটি PIN মিলছে না'; errEl.classList.remove('hidden'); return; }
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'forceSetPin', name: selectedApprover.n, pin })
+});
+const data = await resp.json();
+if(data.error) throw new Error(data.error);
+errEl.classList.add('hidden');
+document.getElementById('approverPinBtn').onclick = submitApproverPin;
+staffLoginSuccess();
+}catch(e){
+errEl.textContent = e.message || 'সমস্যা হয়েছে';
+errEl.classList.remove('hidden');
+}
+}
+
+let staffSession = null;
+
+function staffLoginSuccess(){
+staffSession = { name: selectedApprover.n, role: selectedApprover.r };
+renderTabs();
+switchMode('approve');
+loadQueue();
+}
+
+function staffLogout(){
+staffSession = null;
+selectedApprover = null;
+renderTabs();
+switchMode('entry');
+}
+
+function renderTabs(){
+const tabsEl = document.getElementById('modeTabs');
+const chip = document.getElementById('sessionChip');
+let html = `
+<div class="mode-tab" data-mode="entry" onclick="switchMode('entry')">MDO Entry</div>
+<div class="mode-tab" data-mode="mystatus" onclick="switchMode('mystatus')">আমার স্ট্যাটাস</div>
+`;
+if(staffSession){
+html += `<div class="mode-tab" data-mode="approve" onclick="switchMode('approve')">Approval</div>`;
+html += `<div class="mode-tab" data-mode="dash" onclick="switchMode('dash')">Dashboard</div>`;
+if(staffSession.role === 'AM'){
+html += `<div class="mode-tab" data-mode="admin" onclick="switchMode('admin')">Admin</div>`;
+}
+chip.classList.remove('hidden');
+chip.textContent = staffSession.name + ' (' + staffSession.role + ') — Logout';
+} else {
+html += `<div class="mode-tab" data-mode="stafflogin" onclick="switchMode('stafflogin')">Employee Login</div>`;
+chip.classList.add('hidden');
+}
+tabsEl.innerHTML = html;
+}
+
+function switchMode(mode){
+document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+const viewMap = { entry:'entryView', mystatus:'mystatusView', stafflogin:'stafloginView', approve:'approveView', dash:'dashView', admin:'adminView' };
+document.getElementById(viewMap[mode]).classList.add('active');
+document.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+if(mode === 'dash') loadDashboard();
+if(mode === 'admin') loadAdmin();
+}
+
+let photos = { shopA:null, shopB:null, nid:null, doc:null };
+let photoFlags = { shopA:null, shopB:null, nid:null };
+let hasExistingAccount = null;
+let gpsCoords = null;
+let extractedNID = '';
+let extractedNIDName = '';
+let nidOcrAttempts = 0;
+let nidManualEntry = false;
+
+function onTerritoryChange(){
+const territory = document.getElementById('territory').value;
+const dhSel = document.getElementById('dhName');
+const list = TERRITORY_DH_MAP[territory] || [];
+if(!territory || !list.length){
+dhSel.innerHTML = '<option value="">আগে Territory নির্বাচন করুন</option>';
+dhSel.disabled = true;
+} else {
+dhSel.innerHTML = '<option value="">নির্বাচন করুন</option>' +
+list.map(d => `<option value="${escapeHtml(d.dh)}">${escapeHtml(d.dh)}</option>`).join('');
+dhSel.disabled = false;
+}
+checkReady();
+}
+function setDup(val){
+hasExistingAccount = val;
+document.getElementById('dupNo').classList.toggle('on', val === false);
+document.getElementById('dupYes').classList.toggle('on', val === true);
+checkReady();
+}
+function onDocTypeChange(){
+const isNone = document.getElementById('docType').value === 'None';
+document.getElementById('docZone').classList.toggle('hidden', isNone);
+document.getElementById('noDocWarning').classList.toggle('hidden', !isNone);
+if(isNone){ retake('doc'); }
+checkReady();
+}
+
+/* ============ GPS (hard block) ============ */
+function initGPS(){
+const dot = document.getElementById('gpsDot');
+const text = document.getElementById('gpsText');
+const retryBtn = document.getElementById('gpsRetryBtn');
+dot.classList.remove('ok','bad');
+retryBtn.classList.add('hidden');
+text.textContent = 'লোকেশন খোঁজা হচ্ছে...';
+lockCameras(true);
+if(!navigator.geolocation){
+dot.classList.add('bad'); text.textContent = 'এই ব্রাউজারে লোকেশন সাপোর্ট নেই — ছবি তোলা যাবে না';
+retryBtn.classList.remove('hidden');
+return;
+}
+navigator.geolocation.getCurrentPosition(
+pos => {
+gpsCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+dot.classList.add('ok');
+text.textContent = 'লোকেশন সচল: ' + gpsCoords.lat.toFixed(5) + ', ' + gpsCoords.lng.toFixed(5);
+lockCameras(false);
+checkReady();
+},
+err => {
+gpsCoords = null;
+dot.classList.add('bad');
+text.textContent = 'লোকেশন পাওয়া যায়নি — Settings থেকে Location চালু করে আবার চেষ্টা করুন';
+retryBtn.classList.remove('hidden');
+lockCameras(true);
+},
+{ enableHighAccuracy:true, timeout:12000 }
+);
+}
+function lockCameras(locked){
+['shopABtn','shopBBtn','nidBtn','docBtn'].forEach(id => { document.getElementById(id).disabled = locked; });
+}
+initGPS();
+
+/* ============ NID OCR (retry flow, neutral messaging, manual fallback) ============ */
+async function runNIDOCR(canvas){
+const status = document.getElementById('ocrStatus');
+status.className = 'ocr-status';
+status.textContent = 'নম্বর পড়া হচ্ছে...';
+try{
+const result = await Tesseract.recognize(canvas.toDataURL('image/jpeg', 0.9), 'eng');
+const text = result.data.text || '';
+const numMatches = text.match(/\d{8,}/g) || [];
+numMatches.sort((a,b) => b.length - a.length);
+const mrzMatches = text.match(/[A-Z]{2,}(?:<+[A-Z]{2,})+/g) || [];
+
+if(numMatches[0]){
+extractedNID = numMatches[0];
+extractedNIDName = mrzMatches.length ? mrzMatches.sort((a,b)=>b.length-a.length)[0] : '';
+status.className = 'ocr-status ok';
+status.textContent = 'নম্বর পাওয়া গেছে ✓';
+document.getElementById('manualNidWrap').classList.add('hidden');
+nidOcrAttempts = 0;
+checkNameMatch();
+} else {
+nidOcrAttempts++;
+extractedNID = ''; extractedNIDName = '';
+if(nidOcrAttempts >= 2){
+status.textContent = 'নম্বর স্বয়ংক্রিয়ভাবে পড়া যায়নি — নিচে ম্যানুয়ালি লিখুন';
+document.getElementById('manualNidWrap').classList.remove('hidden');
+} else {
+status.textContent = 'ছবিটি আরও স্পষ্ট করে তুলুন (আলো ভালো রাখুন, কার্ড সোজা রাখুন)';
+}
+}
+}catch(err){
+nidOcrAttempts++;
+extractedNID = ''; extractedNIDName = '';
+status.textContent = 'ছবিটি আরও স্পষ্ট করে তুলুন';
+if(nidOcrAttempts >= 2) document.getElementById('manualNidWrap').classList.remove('hidden');
+}
+checkReady();
+}
+
+function onManualNidInput(){
+const val = document.getElementById('manualNidInput').value.trim();
+extractedNID = val;
+nidManualEntry = val.length > 0;
+checkReady();
+}
+
+function normalizeName(s){
+return (s||'').toUpperCase().replace(/<+/g,' ').replace(/[^A-Z ]/g,'').replace(/\s+/g,' ').trim();
+}
+function checkNameMatch(){
+const warnEl = document.getElementById('nidNameMismatch');
+const typed = normalizeName(document.getElementById('ownerName').value);
+if(!extractedNIDName || !typed){ warnEl.classList.add('hidden'); return; }
+const mrzWords = normalizeName(extractedNIDName).split(' ').filter(w => w.length > 1);
+const typedWords = typed.split(' ').filter(w => w.length > 1);
+if(!typedWords.length || !mrzWords.length){ warnEl.classList.add('hidden'); return; }
+const matchedCount = typedWords.filter(tw => mrzWords.some(mw => mw.indexOf(tw) !== -1 || tw.indexOf(mw) !== -1)).length;
+warnEl.classList.toggle('hidden', (matchedCount / typedWords.length) >= 0.5);
+}
+document.getElementById('ownerName').addEventListener('input', checkNameMatch);
+
+/* ============ EXIF TAMPER CHECK ============ */
+function analyzeExif(file, cb){
+try{
+EXIF.getData(file, function(){
+const tags = EXIF.getAllTags(this) || {};
+const hasMake = !!tags.Make, hasModel = !!tags.Model, hasDate = !!tags.DateTimeOriginal;
+const software = (tags.Software || '').toLowerCase();
+const suspiciousSoftware = /photoshop|gimp|snapseed|lightroom|picsart|canva|remini|facetune|pixlr|meitu/.test(software);
+if(suspiciousSoftware){
+cb({flag:'suspicious', note:'সম্পাদনার সফটওয়্যার সনাক্ত হয়েছে'});
+} else if(!hasMake && !hasModel && !hasDate){
+cb({flag:'suspicious', note:'ক্যামেরার মেটাডেটা নেই'});
+} else {
+cb({flag:'clean', note:'ক্যামেরার তথ্য পাওয়া গেছে'});
+}
+});
+}catch(e){
+cb({flag:'unknown', note:'যাচাই করা যায়নি'});
+}
+}
+
+/* ============ PHOTO CAPTURE + WATERMARK ============ */
+function onPhoto(e, kind){
+const file = e.target.files[0];
+if(!file) return;
+const promptEl = document.getElementById(kind+'Prompt');
+const btn = promptEl.querySelector('.cam-btn');
+btn.disabled = true; btn.textContent = 'ছবি প্রস্তুত হচ্ছে...';
+
+const showsFlag = (kind === 'shopA' || kind === 'shopB');
+if(showsFlag){
+document.getElementById(kind+'Flag').className = 'flag-badge checking';
+document.getElementById(kind+'Flag').textContent = 'যাচাই করা হচ্ছে...';
+analyzeExif(file, (result) => {
+photoFlags[kind] = result;
+const el = document.getElementById(kind+'Flag');
+el.className = 'flag-badge ' + result.flag;
+el.textContent = (result.flag === 'suspicious' ? '⚠️ ' : result.flag === 'clean' ? '✓ ' : '? ') + result.note;
+});
+} else if(kind === 'nid'){
+analyzeExif(file, (result) => { photoFlags.nid = result; });
+}
+
+const reader = new FileReader();
+reader.onload = () => {
+const img = new Image();
+img.onload = () => {
+const MAX_DIM = 1280;
+let w = img.width, h = img.height;
+if(w > MAX_DIM || h > MAX_DIM){
+if(w >= h){ h = Math.round(h*MAX_DIM/w); w = MAX_DIM; } else { w = Math.round(w*MAX_DIM/h); h = MAX_DIM; }
+}
+const canvas = document.createElement('canvas');
+canvas.width = w; canvas.height = h;
+const ctx = canvas.getContext('2d');
+ctx.drawImage(img, 0, 0, w, h);
+
+const mdoName = (selectedMdo ? selectedMdo.n : document.getElementById('mdoName').value.trim()) || 'MDO';
+const gpsText = gpsCoords ? (gpsCoords.lat.toFixed(5)+','+gpsCoords.lng.toFixed(5)) : 'GPS N/A';
+const stamp = new Date().toLocaleString('en-GB', { hour12:false });
+const label = `${mdoName} | ${gpsText} | ${stamp}`;
+const barH = Math.max(22, Math.round(h*0.045));
+ctx.fillStyle = 'rgba(0,0,0,0.55)';
+ctx.fillRect(0, h-barH, w, barH);
+ctx.fillStyle = '#ffffff';
+ctx.font = Math.max(11, Math.round(barH*0.42)) + 'px sans-serif';
+ctx.textBaseline = 'middle';
+ctx.fillText(label, 8, h-barH/2);
+
+const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+photos[kind] = { base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' };
+document.getElementById(kind+'Img').src = dataUrl;
+promptEl.classList.add('hidden');
+btn.disabled = false; btn.innerHTML = '📷&nbsp; আবার তুলুন';
+document.getElementById(kind+'Preview').classList.remove('hidden');
+checkReady();
+if(kind === 'nid'){ runNIDOCR(canvas); }
+};
+img.src = reader.result;
+};
+reader.readAsDataURL(file);
+}
+
+function retake(kind){
+photos[kind] = null;
+photoFlags[kind] = null;
+document.getElementById(kind+'Input').value = '';
+document.getElementById(kind+'Prompt').classList.remove('hidden');
+document.getElementById(kind+'Preview').classList.add('hidden');
+if(kind === 'nid'){
+extractedNID = ''; extractedNIDName = ''; nidOcrAttempts = 0; nidManualEntry = false;
+document.getElementById('nidNameMismatch').classList.add('hidden');
+document.getElementById('manualNidWrap').classList.add('hidden');
+document.getElementById('manualNidInput').value = '';
+}
+if(kind === 'shopA') document.getElementById('shopAConfirm').checked = false;
+if(kind === 'shopB') document.getElementById('shopBConfirm').checked = false;
+checkReady();
+}
+
+function isValidBDNumber(v){ return /^01[3-9][0-9]{8}$/.test(v.trim()); }
+
+function checkReady(){
+const mdo = document.getElementById('mdoName').value.trim();
+const territory = document.getElementById('territory').value;
+const dh = document.getElementById('dhName').value;
+const approvalNum = document.getElementById('approvalNumber').value.trim();
+const approvalOk = isValidBDNumber(approvalNum);
+document.getElementById('approvalNumberError').classList.toggle('hidden', approvalNum === '' || approvalOk);
+const merchantName = document.getElementById('merchantName').value.trim();
+const ownerName = document.getElementById('ownerName').value.trim();
+const docType = document.getElementById('docType').value;
+const docOk = docType === 'None' || photos.doc;
+
+const ready = selectedMdo && mdo === selectedMdo.n && territory && dh &&
+(hasExistingAccount !== null) && approvalOk && merchantName && ownerName && gpsCoords &&
+photos.shopA && photos.shopB && photos.nid && docOk &&
+document.getElementById('shopAConfirm').checked && document.getElementById('shopBConfirm').checked;
+document.getElementById('submitBtn').disabled = !ready;
+}
+document.getElementById('approvalNumber').addEventListener('input', checkReady);
+document.getElementById('merchantName').addEventListener('input', checkReady);
+document.getElementById('ownerName').addEventListener('input', checkReady);
+document.getElementById('territory').addEventListener('change', checkReady);
+
+/* ============ SUBMIT ============ */
+async function runSubmit(){
+const btn = document.getElementById('submitBtn');
+btn.disabled = true; btn.classList.add('loading');
+btn.innerHTML = '<span class="spinner"></span>&nbsp; জমা হচ্ছে...';
+document.getElementById('resultWrap').classList.add('hidden');
+document.getElementById('resultWrap').innerHTML = '';
+
+const payload = {
+action: 'submit',
+id: 'E' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+time: new Date().toISOString(),
+mdo: selectedMdo.n,
+mdoWhitelist: selectedMdo.w,
+territory: document.getElementById('territory').value,
+dhName: document.getElementById('dhName').value,
+existingAccount: hasExistingAccount,
+approvalNumber: document.getElementById('approvalNumber').value.trim(),
+merchantName: document.getElementById('merchantName').value.trim(),
+ownerName: document.getElementById('ownerName').value.trim(),
+extractedNID: extractedNID,
+extractedNIDName: extractedNIDName,
+nameMismatch: !document.getElementById('nidNameMismatch').classList.contains('hidden'),
+nidManualEntry: nidManualEntry,
+docType: document.getElementById('docType').value,
+gps: gpsCoords,
+shopAPhoto: photos.shopA, shopAFlag: photoFlags.shopA,
+shopBPhoto: photos.shopB, shopBFlag: photoFlags.shopB,
+nidPhoto: photos.nid, nidFlag: photoFlags.nid,
+docPhoto: photos.doc
+};
+
+try{
+if(!BACKEND_URL || BACKEND_URL.indexOf('PASTE_YOUR') === 0){
+throw new Error('SETUP: BACKEND_URL এখনো সেট করা হয়নি।');
+}
+let resp;
+try{
+resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload)
+});
+}catch(networkErr){ throw new Error('NETWORK: ' + (networkErr.message||networkErr.name||'connection blocked')); }
+const raw = await resp.text();
+let data;
+try{ data = JSON.parse(raw); } catch(e){ throw new Error('BAD RESPONSE: ' + raw.slice(0,200)); }
+if(data.error) throw new Error(data.error);
+
+renderResult(data);
+}catch(err){
+document.getElementById('resultWrap').classList.remove('hidden');
+document.getElementById('resultWrap').innerHTML =
+'<div class="error-box">জমা করা যায়নি।<br><span style="opacity:.85;word-break:break-word;">' +
+escapeHtml(err.message||'Unknown error') + '</span><br><button class="retry-btn" onclick="runSubmit()">আবার চেষ্টা করুন</button></div>';
+} finally {
+btn.classList.remove('loading'); btn.innerHTML = 'যাচাই করে জমা দিন'; checkReady();
+}
+}
+
+// Deliberately minimal — no fraud/duplicate flags shown to MDO, ever.
+function renderResult(data){
+const wrap = document.getElementById('resultWrap');
+wrap.classList.remove('hidden');
+wrap.innerHTML = `
+<div class="result-card">
+<div class="result-head">
+<div class="result-title">জমা সম্পন্ন ✓</div>
+<div class="result-sub">আপনার এন্ট্রি OM/TM অনুমোদনের অপেক্ষায় আছে। "আমার স্ট্যাটাস" থেকে যেকোনো সময় status চেক করতে পারবেন।</div>
+</div>
+<div class="result-body">
+<div class="info-row"><span class="info-label">দোকান</span><span class="info-val">${escapeHtml(document.getElementById('merchantName').value.trim())}</span></div>
+<div class="info-row"><span class="info-label">Territory / DH</span><span class="info-val">${escapeHtml(data.territory||'')} / ${escapeHtml(data.dhName||'')}</span></div>
+<div class="info-row"><span class="info-label">Status</span><span class="info-val">Pending Approval</span></div>
+</div>
+<div class="result-actions">
+<button onclick="resetForm()">নতুন এন্ট্রি</button>
+<button class="primary" onclick="switchMode('mystatus')">আমার স্ট্যাটাস দেখুন</button>
+</div>
+</div>
+`;
+wrap.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function resetForm(){
+document.getElementById('mdoName').value=''; selectedMdo = null;
+document.getElementById('mdoWhitelist').value='';
+document.getElementById('territory').value='';
+document.getElementById('dhName').innerHTML = '<option value="">আগে Territory নির্বাচন করুন</option>';
+document.getElementById('dhName').disabled = true;
+hasExistingAccount = null;
+document.getElementById('dupNo').classList.remove('on');
+document.getElementById('dupYes').classList.remove('on');
+document.getElementById('approvalNumber').value = '';
+document.getElementById('approvalNumberError').classList.add('hidden');
+document.getElementById('merchantName').value = '';
+document.getElementById('ownerName').value = '';
+document.getElementById('nidNameMismatch').classList.add('hidden');
+['shopA','shopB','nid','doc'].forEach(retake);
+document.getElementById('resultWrap').classList.add('hidden');
+document.getElementById('resultWrap').innerHTML='';
+checkReady();
+window.scrollTo({top:0, behavior:'smooth'});
+}
+
+async function loadMyStatus(){
+const name = document.getElementById('statusName').value.trim();
+const whitelist = document.getElementById('statusWhitelist').value.trim();
+const list = document.getElementById('statusList');
+const empty = document.getElementById('statusEmpty');
+if(!name || !whitelist){ return; }
+list.innerHTML = '<div class="empty-state">লোড হচ্ছে...</div>';
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'myStatus', name, whitelist })
+});
+const data = await resp.json();
+const items = data.items || [];
+if(!items.length){ list.innerHTML=''; empty.classList.remove('hidden'); return; }
+empty.classList.add('hidden');
+list.innerHTML = items.map(it => `
+<div class="status-card">
+<div class="status-top">
+<div class="status-shop">${escapeHtml(it.merchantName||'')}</div>
+<span class="tag ${it.approvalStatus}">${it.approvalStatus}</span>
+</div>
+<div class="status-meta">${escapeHtml(it.territory||'')} / ${escapeHtml(it.dhName||'')} · ${formatTime(it.time)}</div>
+${it.approvalStatus === 'Rejected' && it.rejectComment ? `<div class="status-reject-note">কারণ: ${escapeHtml(it.rejectComment)}</div>` : ''}
+</div>
+`).join('');
+}catch(e){
+list.innerHTML = '<div class="error-box">লোড করা যায়নি।</div>';
+}
+}
+
+/* ============ RISK SCORING (client-side, for queue display) ============ */
+function computeRisk(it){
+let score = 0;
+if(it.duplicate) score += 3;
+if(it.locationDuplicate) score += 3;
+if(it.nameMismatch) score += 1;
+if(it.shopAFlag === 'suspicious') score += 1;
+if(it.shopBFlag === 'suspicious') score += 1;
+if(it.nidFlag === 'suspicious') score += 1;
+if(it.nidManualEntry) score += 1;
+if(it.existingAccount) score += 2;
+if(it.docType === 'None') score += 1;
+if(score >= 3) return 'high';
+if(score >= 1) return 'medium';
+return 'low';
+}
+
+/* ============ OM/TM APPROVAL QUEUE ============ */
+async function loadQueue(){
+if(!staffSession) return;
+const list = document.getElementById('queueList');
+const empty = document.getElementById('queueEmpty');
+const banner = document.getElementById('approverBanner');
+const scopeLabel = staffSession.role === 'OM' ? 'আপনার DH' : staffSession.role === 'TM' ? 'আপনার Territory' : 'সম্পূর্ণ Area';
+banner.textContent = `স্বাগতম, ${staffSession.name} (${staffSession.role}) — দেখানো হচ্ছে: ${scopeLabel}`;
+list.innerHTML = '<div class="empty-state">লোড হচ্ছে...</div>';
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'getPending', name: staffSession.name, role: staffSession.role })
+});
+const data = await resp.json();
+const items = data.items || [];
+if(!items.length){ list.innerHTML=''; empty.classList.remove('hidden'); return; }
+empty.classList.add('hidden');
+const high = items.filter(it => computeRisk(it) === 'high').length;
+let summary = high ? `<div class="section-hint" style="padding:0 20px;">🔴 ${high}টি high-risk entry pending</div>` : '';
+list.innerHTML = summary + items.map(it => renderQueueCard(it)).join('');
+}catch(e){
+list.innerHTML = '<div class="error-box">Queue লোড করা যায়নি: ' + escapeHtml(e.message||'') + '</div>';
+}
+}
+
+function renderQueueCard(it){
+const risk = computeRisk(it);
+const riskLabel = { low:'🟢 Low', medium:'🟡 Review Needed', high:'🔴 High Risk' }[risk];
+const flags = [];
+if(it.shopAFlag === 'suspicious') flags.push('<span class="qflag suspicious">⚠️ Shop-A Suspicious</span>');
+if(it.shopBFlag === 'suspicious') flags.push('<span class="qflag suspicious">⚠️ Shop-B Suspicious</span>');
+if(it.nidFlag === 'suspicious') flags.push('<span class="qflag suspicious">⚠️ NID Suspicious</span>');
+if(it.nameMismatch) flags.push('<span class="qflag suspicious">⚠️ Name/NID Mismatch</span>');
+if(it.duplicate) flags.push(`<span class="qflag suspicious">⚠️ Duplicate NID — ${escapeHtml(it.duplicateInfo||'')}</span>`);
+if(it.locationDuplicate) flags.push(`<span class="qflag suspicious">📍 Duplicate Location — ${escapeHtml(it.locationDuplicateInfo||'')}</span>`);
+if(it.existingAccount) flags.push('<span class="qflag suspicious">Existing Account: Yes</span>');
+if(it.docType === 'None') flags.push('<span class="qflag suspicious">No Supporting Document</span>');
+if(it.nidManualEntry) flags.push('<span class="qflag suspicious">NID: Manually Entered (OCR failed)</span>');
+if(!flags.length) flags.push('<span class="qflag clean">সব ঠিক আছে</span>');
+
+return `
+<div class="queue-card" id="qcard_${it.id}">
+<div class="queue-head">
+<div><div class="qname">${escapeHtml(it.mdo)}</div><div class="qtime">${escapeHtml(it.territory)} / ${escapeHtml(it.dhName)}</div></div>
+<div style="text-align:right;"><span class="risk-badge ${risk}">${riskLabel}</span><div class="qtime" style="margin-top:4px;">${formatTime(it.time)}</div></div>
+</div>
+<div class="queue-body">
+<div class="queue-flags">${flags.join('')}</div>
+<div class="sub-note">Merchant: ${escapeHtml(it.merchantName||'')} | দোকান মালিক: ${escapeHtml(it.ownerName||'')}</div>
+<div class="sub-note">Approval Number: ${escapeHtml(it.approvalNumber||'')} | NID: ${escapeHtml(it.extractedNID||'পড়া যায়নি')}</div>
+<div class="queue-links">
+${it.shopAPhotoUrl?`<a href="${it.shopAPhotoUrl}" target="_blank">দোকান-সামনে</a>`:''}
+${it.shopBPhotoUrl?`<a href="${it.shopBPhotoUrl}" target="_blank">দোকান-ভিতরে</a>`:''}
+${it.nidPhotoUrl?`<a href="${it.nidPhotoUrl}" target="_blank">NID</a>`:''}
+${it.docPhotoUrl?`<a href="${it.docPhotoUrl}" target="_blank">${escapeHtml(it.docType||'Doc')}</a>`:''}
+</div>
+<button class="ai-btn" onclick="runAiVerify('${it.id}')" id="aibtn_${it.id}">🤖 AI দিয়ে যাচাই করুন (ঐচ্ছিক)</button>
+<div id="airesult_${it.id}"></div>
+</div>
+<div class="reject-box hidden" id="rejectbox_${it.id}">
+<textarea id="rejectcomment_${it.id}" placeholder="Reject করার কারণ লিখুন (আবশ্যক)"></textarea>
+</div>
+<div class="queue-actions">
+<button class="reject-btn" onclick="startReject('${it.id}')">Reject</button>
+<button class="approve-btn" onclick="decide('${it.id}','Approved')">Approve</button>
+</div>
+</div>
+`;
+}
+
+function startReject(id){
+const box = document.getElementById('rejectbox_'+id);
+if(box.classList.contains('hidden')){
+box.classList.remove('hidden');
+} else {
+const comment = document.getElementById('rejectcomment_'+id).value.trim();
+if(!comment){ alert('Reject করার কারণ লেখা আবশ্যক।'); return; }
+decide(id, 'Rejected', comment);
+}
+}
+
+async function runAiVerify(id){
+const btn = document.getElementById('aibtn_'+id);
+const resultEl = document.getElementById('airesult_'+id);
+btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>&nbsp; যাচাই হচ্ছে...';
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'aiVerify', id })
+});
+const data = await resp.json();
+if(data.error){
+resultEl.innerHTML = `<div class="ai-result suspicious">⚠️ ${escapeHtml(data.error)}</div>`;
+} else {
+const v = data.verdict;
+resultEl.innerHTML = `<div class="ai-result ${v.verdict === 'pass' ? 'pass' : 'suspicious'}">${v.verdict === 'pass' ? '✓ AI: ঠিক আছে' : '⚠️ AI: সন্দেহজনক'} — ${escapeHtml(v.reasoning||'')}</div>`;
+}
+}catch(e){
+resultEl.innerHTML = `<div class="ai-result suspicious">যাচাই করা যায়নি</div>`;
+}
+btn.disabled = false; btn.innerHTML = '🤖 AI দিয়ে যাচাই করুন (ঐচ্ছিক)';
+}
+
+async function decide(id, decision, comment){
+const card = document.getElementById('qcard_'+id);
+if(card) card.style.opacity = '0.5';
+try{
+await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'decide', id, decision, approver: staffSession.name, approverRole: staffSession.role, comment: comment || '' })
+});
+if(card) card.remove();
+}catch(e){
+alert('সমস্যা হয়েছে: ' + (e.message||''));
+if(card) card.style.opacity = '1';
+}
+}
+
+/* ============ DASHBOARD ============ */
+let allEntries = [];
+async function loadDashboard(){
+allEntries = await fetchAllEntries();
+populateFilters();
+renderDashboard();
+}
+async function fetchAllEntries(){
+try{
+const resp = await fetch(BACKEND_URL + '?action=getLogs');
+const data = await resp.json();
+const entries = (data.logs || []);
+entries.sort((a,b) => new Date(b.time) - new Date(a.time));
+return entries;
+}catch(e){ console.error('fetch failed', e); return []; }
+}
+function populateFilters(){
+const terrSel = document.getElementById('filterTerritory');
+const mdoSel = document.getElementById('filterMdo');
+const terrCur = terrSel.value, mdoCur = mdoSel.value;
+const terrs = [...new Set(allEntries.map(s => s.territory).filter(Boolean))].sort();
+const mdos = [...new Set(allEntries.map(s => s.mdo).filter(Boolean))].sort();
+terrSel.innerHTML = '<option value="">All Territories</option>' + terrs.map(t => `<option>${t}</option>`).join('');
+mdoSel.innerHTML = '<option value="">All MDOs</option>' + mdos.map(m => `<option>${m}</option>`).join('');
+terrSel.value = terrCur; mdoSel.value = mdoCur;
+}
+function clearDateFilter(){
+document.getElementById('filterFrom').value = '';
+document.getElementById('filterTo').value = '';
+renderDashboard();
+}
+function getFiltered(){
+const t = document.getElementById('filterTerritory').value;
+const m = document.getElementById('filterMdo').value;
+const st = document.getElementById('filterStatus').value;
+const from = document.getElementById('filterFrom').value;
+const to = document.getElementById('filterTo').value;
+return allEntries.filter(s => {
+if(t && s.territory !== t) return false;
+if(m && s.mdo !== m) return false;
+if(st && s.approvalStatus !== st) return false;
+if(from && s.time < from) return false;
+if(to && s.time > (to + 'T23:59:59')) return false;
+return true;
+});
+}
+function renderDashboard(){
+const filtered = getFiltered();
+const approved = filtered.filter(s => s.approvalStatus === 'Approved').length;
+const pending = filtered.filter(s => s.approvalStatus === 'Pending').length;
+const rejected = filtered.filter(s => s.approvalStatus === 'Rejected').length;
+document.getElementById('statsRow').innerHTML = `
+<div class="stat-card"><div class="stat-num">${filtered.length}</div><div class="stat-label">TOTAL</div></div>
+<div class="stat-card ok"><div class="stat-num">${approved}</div><div class="stat-label">APPROVED</div></div>
+<div class="stat-card"><div class="stat-num">${pending}</div><div class="stat-label">PENDING</div></div>
+<div class="stat-card rej"><div class="stat-num">${rejected}</div><div class="stat-label">REJECTED</div></div>
+`;
+const tbody = document.getElementById('dashTableBody');
+const emptyState = document.getElementById('emptyState');
+if(!filtered.length){ tbody.innerHTML=''; emptyState.classList.remove('hidden'); return; }
+emptyState.classList.add('hidden');
+tbody.innerHTML = filtered.map(s => `
+<tr>
+<td>${formatTime(s.time)}</td>
+<td>${escapeHtml(s.mdo||'')}<div class="sub-note">${escapeHtml(s.territory||'')} · ${escapeHtml(s.dhName||'')}</div></td>
+<td>${s.shopAPhotoUrl?`<a class="ev-link" href="${s.shopAPhotoUrl}" target="_blank">সামনে</a>`:''} ${s.shopBPhotoUrl?`<a class="ev-link" href="${s.shopBPhotoUrl}" target="_blank">ভিতরে</a>`:''} ${s.nidPhotoUrl?`<a class="ev-link" href="${s.nidPhotoUrl}" target="_blank">NID</a>`:''} ${s.docPhotoUrl?`<a class="ev-link" href="${s.docPhotoUrl}" target="_blank">Doc</a>`:''}</td>
+<td><span class="tag ${s.approvalStatus}">${s.approvalStatus||'Pending'}</span></td>
+</tr>
+`).join('');
+}
+function formatTime(iso){
+const d = new Date(iso);
+if(isNaN(d)) return '';
+return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+function escapeHtml(s){
+return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function exportExcel(){
+const filtered = getFiltered();
+if(!filtered.length){ alert('Export করার মতো কোনো ডেটা নেই।'); return; }
+const rows = filtered.map(s => ({
+'Date/Time': formatTime(s.time), 'MDO': s.mdo, 'MDO Whitelist No': s.mdoWhitelist,
+'Territory': s.territory, 'DH Name': s.dhName, 'Existing Account': s.existingAccount?'Yes':'No',
+'Approval Number': s.approvalNumber, 'Merchant Name': s.merchantName, 'Owner Name (Typed)': s.ownerName,
+'Extracted NID': s.extractedNID, 'Extracted NID Name': s.extractedNIDName, 'Name Mismatch': s.nameMismatch?'Yes':'No',
+'NID Manual Entry': s.nidManualEntry?'Yes':'No',
+'Duplicate Flag': s.duplicate?'Yes':'No',
+'GPS Lat': s.gps ? s.gps.lat : '', 'GPS Lng': s.gps ? s.gps.lng : '',
+'Google Maps Link': s.gps ? `https://www.google.com/maps?q=${s.gps.lat},${s.gps.lng}` : '',
+'Location Duplicate': s.locationDuplicate?'Yes':'No',
+'Shop-A Flag': s.shopAFlag, 'Shop-B Flag': s.shopBFlag, 'NID Flag': s.nidFlag,
+'AI Verified': s.aiVerified?'Yes':'No', 'AI Verdict': s.aiVerdict, 'AI Reasoning': s.aiReasoning,
+'Approval Status': s.approvalStatus, 'Approved By': s.approvedBy, 'Approver Role': s.approverRole,
+'Reject Comment': s.rejectComment,
+'Shop Front Photo': s.shopAPhotoUrl||'', 'Shop Inside Photo': s.shopBPhotoUrl||'',
+'NID Photo': s.nidPhotoUrl||'', 'Doc Photo': s.docPhotoUrl||''
+}));
+const ws = XLSX.utils.json_to_sheet(rows);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, ws, 'ACQ Verification');
+XLSX.writeFile(wb, `ACQ_Verification_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function switchAdminTab(tab){
+['roster','bulk','pins'].forEach(t => {
+document.getElementById('admin'+t.charAt(0).toUpperCase()+t.slice(1)+'Tab').classList.toggle('hidden', t !== tab);
+});
+document.querySelectorAll('.admin-tab').forEach(el => el.classList.toggle('active', el.dataset.atab === tab));
+if(tab === 'pins') loadAdminApprovers();
+}
+
+async function loadAdmin(){
+await loadEmployees();
+renderAdminRoster();
+}
+
+function renderAdminRoster(){
+const wrap = document.getElementById('adminRosterList');
+wrap.innerHTML = EMPLOYEES.map((e, i) => `
+<div class="admin-row" id="emprow_${i}">
+<input value="${escapeHtml(e.t)}" data-f="t">
+<input value="${escapeHtml(e.d)}" data-f="d">
+<input value="${escapeHtml(e.n)}" data-f="n">
+<input value="${escapeHtml(e.w)}" data-f="w">
+<select data-f="r">
+${['MDO','MAO','MDS','OM','TM','AM'].map(r => `<option ${r===e.r?'selected':''}>${r}</option>`).join('')}
+</select>
+<div style="display:flex;gap:4px;">
+<button class="admin-save" onclick="saveEmployeeRow(${i}, '${escapeHtml(e.n).replace(/'/g,"\\'")}')">✓</button>
+<button class="admin-del" onclick="deleteEmployeeRow('${escapeHtml(e.n).replace(/'/g,"\\'")}')">✕</button>
+</div>
+</div>
+`).join('');
+}
+
+function addEmployeeRow(){
+EMPLOYEES.push({ t:'', d:'', n:'নতুন কর্মী', w:'', r:'MDO' });
+renderAdminRoster();
+}
+
+async function saveEmployeeRow(i, originalName){
+const row = document.getElementById('emprow_'+i);
+const emp = {};
+row.querySelectorAll('[data-f]').forEach(el => { emp[el.dataset.f] = el.value.trim(); });
+try{
+const action = (originalName === 'নতুন কর্মী') ? 'addEmployee' : 'updateEmployee';
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action, employee: emp, originalName })
+});
+const data = await resp.json();
+if(data.error) throw new Error(data.error);
+await loadAdmin();
+}catch(e){ alert('সংরক্ষণ করা যায়নি: ' + (e.message||'')); }
+}
+
+async function deleteEmployeeRow(name){
+if(!confirm(name + ' কে মুছে ফেলতে চান?')) return;
+try{
+await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'deleteEmployee', name })
+});
+await loadAdmin();
+}catch(e){ alert('মুছে ফেলা যায়নি।'); }
+}
+
+function parseCsvToEmployees(text){
+const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
+const rows = [];
+for(const line of lines){
+if(/designation/i.test(line) && /whitelist/i.test(line)) continue;
+const parts = line.split(',').map(p => p.trim());
+let t, d, n, w, r;
+if(parts.length >= 6){
+t = parts[1]; d = parts[2]; n = parts[3]; w = parts[4]; r = parts[5];
+} else if(parts.length === 5){
+t = parts[0]; d = parts[1]; n = parts[2]; w = parts[3]; r = parts[4];
+} else {
+continue;
+}
+if(!n || !r) continue;
+rows.push({ t, d, n, w, r });
+}
+return rows;
+}
+
+async function submitBulkEmployees(){
+const text = document.getElementById('bulkCsvInput').value;
+const errEl = document.getElementById('bulkError');
+const okEl = document.getElementById('bulkSuccess');
+errEl.classList.add('hidden'); okEl.classList.add('hidden');
+const rows = parseCsvToEmployees(text);
+if(!rows.length){ errEl.textContent = 'কোনো valid row পাওয়া যায়নি।'; errEl.classList.remove('hidden'); return; }
+if(!confirm(`পুরো Employees তালিকা ${rows.length}টি row দিয়ে প্রতিস্থাপন হবে। নিশ্চিত?`)) return;
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'bulkEmployees', rows })
+});
+const data = await resp.json();
+if(data.error) throw new Error(data.error);
+okEl.textContent = `✓ ${data.count}টি কর্মী সফলভাবে লোড হয়েছে।`;
+okEl.classList.remove('hidden');
+await loadEmployees();
+}catch(e){
+errEl.textContent = e.message || 'সমস্যা হয়েছে';
+errEl.classList.remove('hidden');
+}
+}
+
+async function loadAdminApprovers(){
+const wrap = document.getElementById('adminApproversList');
+wrap.innerHTML = '<div class="empty-state">লোড হচ্ছে...</div>';
+try{
+const resp = await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'listApprovers' })
+});
+const data = await resp.json();
+const names = data.names || [];
+if(!names.length){ wrap.innerHTML = '<div class="empty-state">কেউ এখনো PIN সেট করেনি।</div>'; return; }
+wrap.innerHTML = names.map(n => `
+<div class="admin-row" style="grid-template-columns:1fr auto;">
+<div>${escapeHtml(n)}</div>
+<button class="admin-del" onclick="adminResetApprover('${escapeHtml(n).replace(/'/g,"\\'")}')">Reset PIN</button>
+</div>
+`).join('');
+}catch(e){ wrap.innerHTML = '<div class="error-box">লোড করা যায়নি।</div>'; }
+}
+
+async function adminResetApprover(name){
+if(!confirm(name + '-এর PIN reset করতে চান?')) return;
+try{
+await fetch(BACKEND_URL, {
+method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+body: JSON.stringify({ action:'resetApprover', name })
+});
+await loadAdminApprovers();
+}catch(e){ alert('সমস্যা হয়েছে।'); }
+}
+</script>
+</body>
+</html>
